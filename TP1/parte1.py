@@ -22,7 +22,8 @@ Kp, Ki, Kd = 190.0, 20, 20
 def f(t,y):
     i,x,v,E = y
      #x0 onde a esfera estara
-    e = x - x0
+    x_ref = (1 + epsilon) * x0
+    e = x - x_ref
 
      
 
@@ -47,6 +48,7 @@ g = 9.81 #(m/s^2)
 k = 2*3.2654e-5 #(Nm^2/A^2) 
 x0 = 7.3e-3 #(m)
 i0 = 1.0 #(A)
+epsilon = 0.07 #variavel de erro
 
 
 print("\nAt equilibrium:")
