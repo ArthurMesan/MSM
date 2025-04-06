@@ -24,12 +24,14 @@ Kp, Ki, Kd = 15.0, 300.0, 1000
 
 def f(t,y):
     i,x,v,E = y
+
+    x_ref = (1 + epsilon) * x0
     
     # Medição com ruído gaussiano
     x_med = x + np.random.normal(0, sd)
     
     # Erro com base na medição com ruído
-    e = x_med - x0
+    e = x_med - x_ref
      
     delta_u = Kp*e + Ki*E + Kd*v
 
@@ -50,6 +52,7 @@ g = 9.81 #(m/s^2)
 k = 2*3.2654e-5 #(Nm^2/A^2) 
 x0 = 7.3e-3 #(m)
 i0 = 1.0 #(A)
+epsilon = 0.07 #variavel de erro
 
 
 

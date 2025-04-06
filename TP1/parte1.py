@@ -2,7 +2,6 @@ from scipy.integrate import solve_ivp
 import matplotlib.pyplot as plt
 
 
-
 # Magnetic force fm
 def ForcaMagnetica(i,x):
     return k/2*i*i/x/x
@@ -43,10 +42,10 @@ def f(t,y):
     return [di, dx, dv, dE]
 
 # Parameters (EC5)
-m = 0.068 # (Kg)
+m = 0.073 # (Kg)
 g = 9.81 #(m/s^2)
 k = 2*3.2654e-5 #(Nm^2/A^2) 
-x0 = 7.3e-3 #(m)
+x0 = 8.5e-3 #(m)
 i0 = 1.0 #(A)
 epsilon = 0.07 #variavel de erro
 
