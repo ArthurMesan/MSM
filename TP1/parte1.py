@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 
 # Magnetic force fm
-def fm(i,x):
+def ForcaMagnetica(i,x):
     return k/2*i*i/x/x
 # Force Factor
 def Bl(i,x):
@@ -33,7 +33,7 @@ def f(t,y):
     #dx/dt
     dx = v
     #dv/dt
-    dv = g-fm(i,x)/m
+    dv = g-ForcaMagnetica(i,x)/m
      #x - x0
     dE = e
 
@@ -52,9 +52,9 @@ i0 = 1.0 #(A)
 print("\nAt equilibrium:")
 print("    i0 = ",i0)
 print("    x0 = ",x0)
-print("    fm = ",fm(i0,x0))
+print("    fm = ",ForcaMagnetica(i0,x0))
 print("    mg = ",m*g)
-print("    fm/fg (%) = ",fm(i0,x0)/(m*g)*100)
+print("    fm/fg (%) = ",ForcaMagnetica(i0,x0)/(m*g)*100)
 
 # Resistance
 R = 1.0 #(Ohm)
