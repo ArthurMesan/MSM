@@ -18,7 +18,7 @@ def L(x):
 # State space representation in vector form
 # dy = y´ = function(y,t)
 # y = [i,x,v,E]
-Kp, Ki, Kd = 15.0, 300.0, 1000
+Kp, Ki, Kd = 30.0, 80.0, 1500
 #Kp, Ki, Kd = 30.0, 300, 1000  
 
 
