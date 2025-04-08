@@ -1,103 +1,90 @@
-from scipy.integrate import solve_ivp
+import numpy as np
 import matplotlib.pyplot as plt
-
-
-# Magnetic force fm
-def ForcaMagnetica(i,x):
-    return k/2*i*i/x/x
-# Force Factor
-def Bl(i,x):
-     return k/2*i/x/x #(N/A)
-# Inductance
-def L(x):
-     return k/x #(H)
-
-
-# State space representation in vector form
-# dy = y´ = function(y,t)
-# y = [i,x,v,E]
-Kp, Ki, Kd = 190.0, 20, 20 
-
-def f(t,y):
-    i,x,v,E = y
-     #x0 onde a esfera estara
-    x_ref = (1 + epsilon) * x0
-    e = x - x_ref
-
-     
-
-    delta_u = Kp*e + Ki*E + Kd*v
-    
-    #di/dt
-    di = -R/L(x)*i - Bl(i,x)/L(x)*v + (u0 + delta_u)/L(x)
-    #dx/dt
-    dx = v
-    #dv/dt
-    dv = g-ForcaMagnetica(i,x)/m
-     #x - x0
-    dE = e
-
-
-   
-    return [di, dx, dv, dE]
+from scipy.integrate import solve_ivp
 
 # Parameters (EC5)
-m = 0.073 # (Kg)
+m = 0.068 # (Kg)
 g = 9.81 #(m/s^2)
 k = 2*3.2654e-5 #(Nm^2/A^2) 
-x0 = 8.5e-3 #(m)
-i0 = 1.0 #(A)
-epsilon = 0.07 #variavel de erro
+R = 1.0         # resistência (Ohm)
 
+# Ponto de equilíbrio
+x0 = 7.3e-3                                      # posição de equilíbrio (m)
+i0 = 1.0                                         # corrente de equilíbrio (A)
+u0 = R * i0                                      # tensão de equilíbrio (V)
 
-print("\nAt equilibrium:")
-print("    i0 = ",i0)
-print("    x0 = ",x0)
-print("    fm = ",ForcaMagnetica(i0,x0))
-print("    mg = ",m*g)
-print("    fm/fg (%) = ",ForcaMagnetica(i0,x0)/(m*g)*100)
+print(f"Corrente de equilíbrio i0 = {i0:.4f} A")
+print(f"Tensão de equilíbrio u0 = {u0:.4f} V")
 
-# Resistance
-R = 1.0 #(Ohm)
-u0 = R*i0
+# Força magnética
+def f_m(i, x):
+    return (k/2) * (i**2/x**2)
 
+# Fator Bl
+def Bl(i, x):
+    return f_m(i,x)/i
 
-# Initial conditions
+# Indutância (assumida constante)
+def L(x):
+    return 0.01  # H
 
-# y = [i,x,v,E]
-y_0 = [i0,x0,0.0,0]
-# Time span
-t_0 = 0.0
-t_end = 30 #(s) 
+# Ganhos do PID
+Kp = 190
+Ki = 20
+Kd = 20
 
-sol = solve_ivp(f, [t_0, t_end],y_0)
+# Função do sistema dinâmico com controle PID
+def f(t, y):
+    i, x, v, E = y  # corrente, posição, velocidade, erro acumulado
+    e = x - x0      # erro de posição
+    der_e = v       # derivada do erro (dx/dt)
+    int_e = E       # integral do erro acumulado
 
+    delta_u = Kp * e + Ki * int_e + Kd * der_e
+    u = u0 + delta_u
 
-# Plot posição e velocidade
-fig = plt.figure(figsize=(15, 4))
-plt.subplot(1, 2, 1)
-plt.plot(sol.t, sol.y[1, :] - x0, 'k', linewidth=2)
-plt.grid(True)
-plt.xlabel('$t$ (s)')
-plt.ylabel('$x(t)-x_0$ (m)')
+    di_dt = (u - R * i - Bl(i, x) * v) / L(x)
+    dx_dt = v
+    dv_dt = g - f_m(i, x) / m
+    dE_dt = e
 
-plt.subplot(1, 2, 2)
-plt.plot(sol.t, sol.y[2, :], 'k', linewidth=2)
-plt.grid(True)
-plt.xlabel('$t$ (s)')
-plt.ylabel('$v(t)$ (m/s)')
-fig.suptitle('Fig. 1 - Dados da esfera')
-plt.tight_layout()
+    return [di_dt, dx_dt, dv_dt, dE_dt]
 
-# Plot corrente
-fig = plt.figure(figsize=(15, 4))
-plt.subplot(1, 2, 1)
-plt.plot(sol.t, sol.y[0, :], 'k', linewidth=2)
-plt.grid(True)
-plt.xlabel('$t$ (s)')
-plt.ylabel('$i(t)$ (A)')
-fig.suptitle('Fig. 2 - Dados da fonte')
+# Condições iniciais
+
+y0 = [i0, x0, 0.0, 0.0]  # [corrente, posição, velocidade, erro acumulado]
+t0, tf = 0, 30           # intervalo de simulação
+t_eval = np.linspace(t0, tf, 1000)
+
+# Simulação numérica com Runge-Kutta 4(5)
+sol = solve_ivp(f, (t0, tf), y0, t_eval=t_eval)
+
+# Extração dos resultados
+t = sol.t
+i = sol.y[0]
+x = sol.y[1]
+v = sol.y[2]
+
+plt.figure(figsize=(12, 8))
+
+plt.subplot(3, 1, 1)
+plt.plot(t, x - x0, label='x(t) - x0')
+plt.ylabel('Posição relativa (m)')
+plt.grid()
+plt.legend()
+
+plt.subplot(3, 1, 2)
+plt.plot(t, v, label='v(t)', color='orange')
+plt.ylabel('Velocidade (m/s)')
+plt.grid()
+plt.legend()
+
+plt.subplot(3, 1, 3)
+plt.plot(t, i, label='i(t)', color='green')
+plt.xlabel('Tempo (s)')
+plt.ylabel('Corrente (A)')
+plt.grid()
+plt.legend()
+
 plt.tight_layout()
 plt.show()
-
-

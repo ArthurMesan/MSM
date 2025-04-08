@@ -18,13 +18,15 @@ def L(x):
 # State space representation in vector form
 # dy = y´ = function(y,t)
 # y = [i,x,v,E]
-Kp, Ki, Kd = 30.0, 80.0, 1500
+Kp, Ki, Kd = 250.0, 40.0, 40.0
 #Kp, Ki, Kd = 30.0, 300, 1000  
+
 
 
 def f(t,y):
     i,x,v,E = y
 
+    # Desvio
     x_ref = (1 + epsilon) * x0
     
     # Medição com ruído gaussiano
@@ -52,7 +54,7 @@ g = 9.81 #(m/s^2)
 k = 2*3.2654e-5 #(Nm^2/A^2) 
 x0 = 7.3e-3 #(m)
 i0 = 1.0 #(A)
-epsilon = 0.07 #variavel de erro
+epsilon = 0.01 #variavel de erro
 
 
 
