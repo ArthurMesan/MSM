@@ -4,7 +4,6 @@ from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d, splrep, splev 
 from scipy.io import wavfile
 from IPython.display import clear_output # To clear the console at each iteration 
-from scipy.interpolate import interp1d, splrep, splev 
 
 # parameters from a real loudspeaker:
 m = 14.35e-3 #kg
