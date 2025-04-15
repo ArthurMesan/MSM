@@ -16,9 +16,9 @@ R= 3.3 #Ohms
 # --- GERAR SINAL SENOIDAL PARA TESTE ---
 
 # Parâmetros da senoide
-f_sine = 0.5  # frequência da senoide (Hz)
+f_sine = 100  # frequência da senoide (Hz)
 Amplitude = 2.0  # amplitude em Volts
-duration = 1.0  # duração do sinal (s)
+duration = 0.05  # duração do sinal (s)
 sample_rate = 44100  # taxa de amostragem (Hz)
 
 #----------------------------------------
@@ -83,8 +83,21 @@ duration = num_samples / sample_rate
 time = np.linspace(0, duration, num_samples)
 
 # The 'data' array contains amplitude values
-CH0 = data[:,0] # channel 0 amplitude
-CH1 = data[:,1] # channel 1 amplitude
+#CH0 = data[:,0] # channel 0 amplitude
+#CH1 = data[:,1] # channel 1 amplitude
+
+#Implmentação senoide
+
+# Tempo correspondente à senoide
+t_sine = np.linspace(0, duration, int(sample_rate * duration))
+
+# Gera o sinal senoide
+sine_wave = Amplitude * np.sin(2 * np.pi * f_sine * t_sine)
+
+
+CH0 = sine_wave
+CH1 = sine_wave
+time = t_sine
 
 print(f"Number of samples: {num_samples}")
 print(f"Signal duration: {duration}s " )
@@ -99,6 +112,7 @@ plt.title("Waveform of the audio file")
 plt.legend(['Channel 0', 'Channel 1'])
 
 CH_max = np.max([np.max(np.abs(CH0)),np.max(np.abs(CH1))])
+
 
 Amplitude = 2.0
 CH0 = Amplitude*CH0/CH_max # channel 0 PC amplitude
@@ -138,19 +152,11 @@ plt.xlim(10,1e5)
 plt.show()
 
 
-#Implmentação senoide
-
-# Tempo correspondente à senoide
-t_sine = np.linspace(0, duration, int(sample_rate * duration))
-
-# Gera o sinal senoide
-sine_wave = Amplitude * np.sin(2 * np.pi * f_sine * t_sine)
-
-
 # interpolate the channels 
 ch0 = interp1d(time, CH0) #, kind='quadratic')
-ch1 = interp1d(time, CH1) #, kind='quadratic')
-#ch1 = interp1d(t_sine, sine_wave, kind='linear', fill_value=0, bounds_error=False)
+#ch0 = interp1d(t_sine, sine_wave, kind='linear', fill_value=0, bounds_error=False)
+#ch1 = interp1d(time, CH1) #, kind='quadratic')
+ch1 = interp1d(t_sine, sine_wave, kind='linear', fill_value=0, bounds_error=False)
 
 # Creating the function f(t,x) for solving with the solve_IVP function
 def fch0(t,x): # function f(x(t),t) 
