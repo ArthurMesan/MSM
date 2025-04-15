@@ -4,6 +4,7 @@ from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d, splrep, splev 
 from scipy.io import wavfile
 from IPython.display import clear_output # To clear the console at each iteration 
+from numpy.polynomial.polynomial import Polynomial
 
 # parameters from a real loudspeaker:
 m = 14.35e-3 #kg
@@ -13,16 +14,11 @@ Bl= 4.95 #N/A
 L= 266e-6 #H
 R= 3.3 #Ohms
 
-# --- GERAR SINAL SENOIDAL PARA TESTE ---
+Bl0 = 4.95  # Valor linear original
+alpha = 0.1  # Coeficiente de não linearidade
 
-# Parâmetros da senoide
-f_sine = 0.5  # frequência da senoide (Hz)
-Amplitude = 2.0  # amplitude em Volts
-duration = 1.0  # duração do sinal (s)
-sample_rate = 44100  # taxa de amostragem (Hz)
-
-#----------------------------------------
-
+def Bl(x):
+    return Bl0 * (1 - alpha * x**2)
 
 # Create frequency range 
 fmin = 20 #Hz
@@ -32,11 +28,12 @@ npoints = 100
 f = np.logspace(np.log10(fmin),np.log10(fmax),npoints)
 omega = 2*np.pi*f
 
-
 # space state Matrices 
-A = np.array([[-R/L, 0, -Bl/L],
-              [0, 0, 1],
-              [Bl/m, -k/m, -b/m]])
+A = np.array([
+    [-R/L,      0,         -Bl0/L],  # Use Bl0 (constante)
+    [   0,      0,          1    ],
+    [Bl0/m,   -k/m,       -b/m   ]   # Use Bl0 (constante)
+])
 B = np.array([1/L, 0, 0])
 C = np.array([0, 0, 1])
 I = np.eye(3)
@@ -100,7 +97,7 @@ plt.legend(['Channel 0', 'Channel 1'])
 
 CH_max = np.max([np.max(np.abs(CH0)),np.max(np.abs(CH1))])
 
-Amplitude = 2.0
+Amplitude = 5.0
 CH0 = Amplitude*CH0/CH_max # channel 0 PC amplitude
 CH1 = Amplitude*CH1/CH_max # channel 1 PC amplitude
 
@@ -138,100 +135,68 @@ plt.xlim(10,1e5)
 plt.show()
 
 
-
 # interpolate the channels 
 ch0 = interp1d(time, CH0) #, kind='quadratic')
 ch1 = interp1d(time, CH1) #, kind='quadratic')
-#ch1 = interp1d(t_sine, sine_wave, kind='linear', fill_value=0, bounds_error=False)
 
 # Creating the function f(t,x) for solving with the solve_IVP function
-def fch0(t,x): # function f(x(t),t) 
-    return A.dot(x)+B*(ch0(t))
+def fch0(t, x):
+    i, pos, vel = x  # Desempacota os estados
+    #current_Bl = Bl(pos)  # Bl depende da posição atual
+    
+    # Atualiza a matriz A com current_Bl
+    A_linear = np.array([
+        [-R/L,      0,         -Bl0/L],
+        [   0,      0,            1],
+        [Bl0/m, -k/m,      -b/m]
+    ])
+    
+    return A_linear.dot(x) + B * ch0(t)  # Usa a nova matriz
 
-def fch1(t,x): # function f(x(t),t) 
-    return A.dot(x)+B*(ch1(t))
-
-
+def fch1(t, x):
+    # Desempacota os estados: [corrente (i), posição (x), velocidade (v)]
+    i, pos, vel = x  
+    
+    # Calcula Bl(x) usando a posição atual do cone (pos)
+    current_Bl = Bl(pos)
+    
+    # Reconstrói a matriz A com o Bl atualizado
+    A_nonlinear = np.array([
+        [-R/L,      0,         -current_Bl/L],  # Linha 1: Equação da corrente
+        [   0,      0,            1         ],  # Linha 2: dx/dt = v
+        [current_Bl/m, -k/m,      -b/m      ]   # Linha 3: dv/dt = (Bl/m)i - (k/m)x - (b/m)v
+    ])
+    
+    # Retorna a derivada do estado: dx/dt = A_nonlinear * x + B * Vin(t)
+    return A_nonlinear.dot(x) + B * ch1(t)  # Usa o sinal do canal 1 (ch1)
 
 # Response to channel 0
 sol_CH0 = solve_ivp(fch0, [0, duration],[0,0,0])#, t_eval=time)
-#sol_CH0_nl = solve_ivp(fch0_nl, [0, duration], [0, 0, 0])
-
-# Variaveis de limitação
-x_max = np.max(np.abs(sol_CH0.y[1,:]))
-x1 = 0.75 * x_max
-x2 = 1.5 * x_max
-
-def Bl_nonlinear(x):
-    
-    abs_x = np.abs(x)
-    if abs_x <= x1:
-        return Bl
-    elif abs_x >= x2:
-        return 0
-    else:
-        # Bl decai de forma polinomial quadratica de x1 até x2
-        # Normaliza x no intervalo [0,1]
-        norm = (abs_x - x1) / (x2 - x1)
-        return Bl * (1 - norm**2)  # decaimento parabólico
-    
-def fch0_nl(t, x):
-    Blx = Bl_nonlinear(x[1])  # x[1] é a posição do cone
-    A_nl = np.array([[-R/L, 0, -Blx/L],
-                     [0,    0, 1],
-                     [Blx/m, -k/m, -b/m]])
-    return A_nl.dot(x) + B * ch1(t)
 
 # Response to channel 1
 #sol_CH1 = solve_ivp(fch1, [0, duration],[0,0,0])#, t_eval=time)
 #sol_CH1 = sol_CH0 # fast test
-sol_CH1 = solve_ivp(fch0_nl, [0, duration], [0, 0, 0])
+sol_CH1 = solve_ivp(fch1, [0, duration], [0,0,0], t_eval=time, method='RK45')
 
-#plt.figure()
-#plt.plot(t_sine, sine_wave, label="Senoide usada no Canal 1")
-#plt.xlabel("Tempo [s]")
-#plt.ylabel("Amplitude [V]")
-#plt.title("Entrada Canal 1 - Senoide")
-#plt.grid(True)
-#plt.legend()
-
-
-plt.plot(sol_CH1.t, sol_CH1.y[1], label="x (posição CH1)")
-plt.axhline(x1, color='r', linestyle='--', label='x1')
-plt.axhline(x2, color='k', linestyle='--', label='x2')
-plt.axhline(-x1, color='r', linestyle='--')
-plt.axhline(-x2, color='k', linestyle='--')
-plt.legend()
-plt.title("Verificação da posição x em relação aos limites de Bl não-linear")
-
-# --- Plot do Bl(x) não linear ---
-
-# Criar um vetor de posições x abrangendo de -x2 até x2
-x_vals = np.linspace(-1.2*x2, 1.2*x2, 500)
-Bl_vals = [Bl_nonlinear(x) for x in x_vals]
-
-# Plotar o gráfico Bl(x)
-plt.figure(figsize=(8, 5))
-plt.plot(x_vals * 1e3, Bl_vals, 'r')  # multiplicando por 1e3 para mostrar em mm
-plt.axvline(x1 * 1e3, color='k', linestyle='--', label='x1')
-plt.axvline(x2 * 1e3, color='k', linestyle='--', label='x2')
-plt.axvline(-x1 * 1e3, color='k', linestyle='--')
-plt.axvline(-x2 * 1e3, color='k', linestyle='--')
-plt.xlabel('Posição $x$ [mm]')
-plt.ylabel('$Bl(x)$ [N/A]')
-plt.title('Modelo Não-Linear de $Bl(x)$')
-plt.grid(True)
-plt.legend()
-plt.tight_layout()
-
+# 1. Definindo excursão máxima e x1, x2
+x_max = np.max(np.abs(sol_CH0.y[1,:]))  # ou sol_CH1 se quiser comparar os dois
+x1 = 0.75 * x_max
+x2 = 1.50 * x_max
+print(f"x_max = {x_max:.4e} m, x1 = {x1:.4e} m, x2 = {x2:.4e} m")
 
 # find the acceleration from the state variables
-acceleration_0 = Bl/m*sol_CH0.y[0,:] -k/m*sol_CH0.y[1,:] -b/m*sol_CH0.y[2,:]
-#acceleration_1 = Bl/m*sol_CH1.y[0,:] -k/m*sol_CH1.y[1,:] -b/m*sol_CH1.y[2,:]
-acceleration_1 = np.array([
-    Bl_nonlinear(x[1]) / m * x[0] - k/m * x[1] - b/m * x[2]
-    for x in sol_CH1.y.T
-])
+# Aceleração do CH0 (Linear)
+acceleration_0 = (Bl0/m) * sol_CH0.y[0,:] - (k/m)*sol_CH0.y[1,:] - (b/m)*sol_CH0.y[2,:]  # Usar Bl0!
+
+# Aceleração do CH1 (Não Linear)
+acceleration_1 = (Bl(sol_CH1.y[1,:])/m) * sol_CH1.y[0,:] - (k/m)*sol_CH1.y[1,:] - (b/m)*sol_CH1.y[2,:]
+
+# 2. Ajustando o modelo polinomial
+x = sol_CH0.y[1,:]
+y = acceleration_0
+coefs = np.polyfit(x, y, 2)
+poly = np.poly1d(coefs)
+print("Coeficientes do modelo polinomial:", coefs)
 
 #spline interpolation to fit the wav format
 acc_0 = splev(time,splrep(sol_CH0.t, acceleration_0))
@@ -241,58 +206,71 @@ acc_1 = splev(time,splrep(sol_CH1.t, acceleration_1))
 stereo_signal = np.column_stack((acc_0, acc_1))
 stereo_signal = stereo_signal/np.max(stereo_signal)
 
-
-
 # Escrita no arquivo de saida
 wavfile.write('Aula06_out.wav', sample_rate, stereo_signal.astype(np.float32))
 
-# --- Aceleração por canal ---
-fig, axs = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
-axs[0].plot(time, acc_0, 'g', linewidth=1.5)
-axs[0].grid(True)
-axs[0].set_ylabel('Acc CH0 [m/s²]')
-axs[0].set_title('Aceleração do Cone - Canal 0')
+# Gráfico de Aceleração (CH0 vs CH1)
+plt.figure(figsize=(12, 6))
 
-axs[1].plot(time, acc_1, 'b', linewidth=1.5)
-axs[1].grid(True)
-axs[1].set_xlabel('Tempo [s]')
-axs[1].set_ylabel('Acc CH1 [m/s²]')
-axs[1].set_title('Aceleração do Cone - Canal 1')
+# Subplot para CH0 (Linear)
+plt.subplot(2, 1, 1)
+plt.plot(time, acc_0, 'g', linewidth=1.5)
+plt.title('Aceleração do Canal 0 (Linear)')
+plt.xlabel('Tempo [s]')
+plt.ylabel('Aceleração [m/s²]')
+plt.grid(True)
 
-plt.tight_layout()
-
-
-# --- Corrente (estado x[0]) por canal ---
-fig, axs = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
-axs[0].plot(sol_CH0.t, sol_CH0.y[0, :], 'g', linewidth=1.5)
-axs[0].grid(True)
-axs[0].set_ylabel('Corrente CH0 [A]')
-axs[0].set_title('Corrente Elétrica - Canal 0')
-
-axs[1].plot(sol_CH1.t, sol_CH1.y[0, :], 'b', linewidth=1.5)
-axs[1].grid(True)
-axs[1].set_xlabel('Tempo [s]')
-axs[1].set_ylabel('Corrente CH1 [A]')
-axs[1].set_title('Corrente Elétrica - Canal 1')
+# Subplot para CH1 (Não Linear)
+plt.subplot(2, 1, 2)
+plt.plot(time, acc_1, 'b', linewidth=1.5)
+plt.title('Aceleração do Canal 1 (Não Linear)')
+plt.xlabel('Tempo [s]')
+plt.ylabel('Aceleração [m/s²]')
+plt.grid(True)
 
 plt.tight_layout()
 
+# Gráfico de Corrente (CH0 e CH1)
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8))
 
-# --- Posição (estado x[1]) por canal ---
-fig, axs = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
-axs[0].plot(sol_CH0.t, sol_CH0.y[1, :], 'g', linewidth=1.5)
-axs[0].grid(True)
-axs[0].set_ylabel('Posição CH0 [m]')
-axs[0].set_title('Posição do Cone - Canal 0')
+# Canal 0 (Linear)
+ax1.plot(sol_CH0.t, sol_CH0.y[0,:], 'g', linewidth=1.5, label='CH0 (Linear)')
+ax1.grid(True)
+ax1.set_xlabel('$t [s]$')
+ax1.set_ylabel('Corrente [A]')
+ax1.set_title('Resposta de Corrente - Canal 0')
+ax1.legend()
 
-axs[1].plot(sol_CH1.t, sol_CH1.y[1, :], 'b', linewidth=1.5)
-axs[1].grid(True)
-axs[1].set_xlabel('Tempo [s]')
-axs[1].set_ylabel('Posição CH1 [m]')
-axs[1].set_title('Posição do Cone - Canal 1')
+# Canal 1 (Não Linear)
+ax2.plot(sol_CH1.t, sol_CH1.y[0,:], 'b', linewidth=1.5, label='CH1 (Não Linear)')
+ax2.grid(True)
+ax2.set_xlabel('$t [s]$')
+ax2.set_ylabel('Corrente [A]')
+ax2.set_title('Resposta de Corrente - Canal 1')
+ax2.legend()
 
 plt.tight_layout()
 
+# Gráfico de Posição (CH0 e CH1)
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8))
+
+# Canal 0 (Linear)
+ax1.plot(sol_CH0.t, sol_CH0.y[1,:], 'g', linewidth=1.5, label='CH0 (Linear)')
+ax1.grid(True)
+ax1.set_xlabel('$t [s]$')
+ax1.set_ylabel('Posição [mm]')
+ax1.set_title('Resposta de Posição - Canal 0')
+ax1.legend()
+
+# Canal 1 (Não Linear)
+ax2.plot(sol_CH1.t, sol_CH1.y[1,:], 'b', linewidth=1.5, label='CH1 (Não Linear)')
+ax2.grid(True)
+ax2.set_xlabel('$t [s]$')
+ax2.set_ylabel('Posição [mm]')
+ax2.set_title('Resposta de Posição - Canal 1')
+ax2.legend()
+
+plt.tight_layout()
 
 # Compute the FFT
 N = len(acc_0)
@@ -309,13 +287,26 @@ CH_max = np.max(magnitude_acc)
 # Plot the frequency response (magnitude vs frequency)
 
 plt.figure(figsize=(10, 4))
-plt.semilogx(frequencies[:N // 2], magnitude_CH0[0:N // 2]/CH_max ,'g')
-plt.semilogx(frequencies[:N // 2], magnitude_acc[:N // 2]/CH_max ,'b')
+# No gráfico de FFT:
+plt.semilogx(frequencies[:N // 2], magnitude_CH0[0:N // 2]/np.max(magnitude_CH0), 'g', label='CH0')
+plt.semilogx(frequencies[:N // 2], magnitude_acc[:N // 2]/np.max(magnitude_acc), 'b', label='CH1')
 plt.title('Frequency Response of Audio')
 plt.xlabel('Frequency [Hz]')
 plt.ylabel('Normalized magnitude of acceleration')
 plt.xlim(10,1e5)
 
 
-
+# 3. Plotando o modelo
+x_plot = np.linspace(-x_max*1.6, x_max*1.6, 500)
+y_model = poly(x_plot)
+plt.figure(figsize=(8,4))
+plt.plot(x, y, '.', alpha=0.3, label='Dados simulados')
+plt.plot(x_plot, y_model, 'r-', linewidth=2, label='Polinômio grau 2')
+plt.axvline(x1, color='g', linestyle='--', label='x1 = 75% x_max')
+plt.axvline(x2, color='b', linestyle='--', label='x2 = 150% x_max')
+plt.grid(True)
+plt.xlabel("Posição do cone [m]")
+plt.ylabel("Aceleração [m/s²]")
+plt.title("Modelo polinomial de ordem 2")
+plt.legend()
 plt.show()
