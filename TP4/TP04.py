@@ -17,6 +17,10 @@ from petsc4py import PETSc
 import pyvista
 from dolfinx.plot import vtk_mesh
 import dolfinx.plot
+from scipy.constants import pi, epsilon_0
+from scipy.integrate import solve_ivp
+import sympy as sp
+
 
 
 # GMSH
@@ -263,7 +267,6 @@ for i, point in enumerate(points.T):
 points_on_proc = np.array(points_on_proc, dtype=np.float64)
 E_values = E.eval(points_on_proc, cells)
 
-# plot horizontal line
 fig = plt.figure(figsize=(8,5))
 plt.plot(x, -E_values[:,1], 'k', linewidth=2); 
 plt.grid(True);
@@ -274,5 +277,44 @@ fig.suptitle("$E(x)$")
 plt.savefig("campo_eletrico_horizontal.png", dpi=300, bbox_inches='tight')
 
 
+# Cálculo do movimento da gotícula sob o efeito do campo elétrico
+
+m = (4 / 3) * pi * Rg**3 * rho  # Massa da gotícula
+Q = 8 * pi * np.sqrt(epsilon_0 * gamma) * Rg**2 / (3 / 2)  # Carga da gotícula
+x_eixo = x
+E = -E_values[:, 1] - 3e-3  # Campo elétrico ao longo do eixo x
+
+def campo_eletrico(t, y):
+    x , v = y
+    proximo = np.argmin(np.abs(x_eixo - x))
+    Fe = Q * E[proximo] if x < d else 0 # Força elétrica
+    a = Fe / m  # Aceleração
+    return [v, a]
+
+tempo = (0, 0.2e-3)  # Intervalo de tempo
+y0 = [0, 0]  # Condições iniciais: posição inicial e velocidade inicial
+t_eval = np.linspace(*tempo, 500)
+solucao = solve_ivp(campo_eletrico, tempo, y0, t_eval=t_eval)
+
+x_pos = solucao.y[0]
+v_vel = solucao.y[1]
 
 
+# Gráficos de posição e velocidade
+plt.figure().set_figwidth(5)
+plt.plot(solucao.t*1e3, x_pos*1000)
+plt.xlabel("Tempo (ms)")
+plt.ylabel("Posição (mm)")
+plt.title("Posição da Gotícula")
+
+plt.tight_layout()
+plt.savefig("posição.png")
+
+plt.figure().set_figwidth(5)
+plt.plot(solucao.t*1e3, v_vel)
+plt.xlabel("Tempo (ms)")
+plt.ylabel("Velocidade (m/s)")
+plt.title("Velocidade da Gotícula")
+
+plt.tight_layout()
+plt.savefig("velocidade.png")
