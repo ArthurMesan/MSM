@@ -109,6 +109,28 @@ gmsh.finalize()
 
 #-------------------------------------------------------------------
 
+
+from dolfinx.plot import vtk_mesh
+import pyvista
+pyvista.start_xvfb()
+
+# Configura a visualização com PyVista
+plotter = pyvista.Plotter(off_screen=True)  # off_screen garante que não abre a janela
+mesh.topology.create_connectivity(2, 2)
+grid = pyvista.UnstructuredGrid(*vtk_mesh(mesh, 2))
+num_local_cells = mesh.topology.index_map(2).size_local
+grid.cell_data["Marker"] = cell_tags.values[cell_tags.indices < num_local_cells]
+grid.set_active_scalars("Marker")
+
+# Adiciona a malha com coloração
+actor = plotter.add_mesh(grid, show_edges=True, cmap="viridis", edge_color="black")
+
+plotter.view_xy()
+plotter.screenshot("malha_com_marcadores.png")
+
+
+#--------------------------------------------------------------------
+
 #Espaço de funções para permissividade ralativa
 # Define um espaço de funções Q no domínio da malha, usando elemtentos
 # Disconti uos de Galerkin (DG) de GRAU 0, OU SEJA, funções constantes
@@ -144,27 +166,27 @@ tdim = mesh.topology.dim
 
 #Definição de cordenada especial e variavel radial e
 x = SpatialCoordinate(mesh)
-r = x[0]    # Radial axis
+r = x[0]    # Eixo radial (x)
 
 # Funções para encontrar fronteiras do domínio
 def fronteira_bocal(x):
-    return np.logical_and(np.isclose(x[0], R), x[1] <= 6e-3) #Proximo ao raio de 5mm
+    return np.logical_and(np.isclose(x[0], R), x[1] <= 5e-3) #Proximo ao raio de 5mm
     
 def froteira_barreira(x):
     return np.logical_and(np.isclose(x[1], 9e-3), x[0] > 2e-3) #Proximo ao raio de 2mm
 
 
 # Estrutura de fronteira do bocal e barreira
-facets_capilar = locate_entities_boundary(mesh, tdim - 1, fronteira_bocal)
-facets_barreira = locate_entities_boundary(mesh, tdim - 1, froteira_barreira)
+#facets_capilar = locate_entities_boundary(mesh, tdim - 1, fronteira_bocal)
+#facets_barreira = locate_entities_boundary(mesh, tdim - 1, froteira_barreira)
 
 # Topologia dos pontos que foram triangulados
-dofs_capilar = locate_dofs_topological(V, tdim - 1, facets_capilar)
-dofs_barreira = locate_dofs_topological(V, tdim - 1, facets_barreira)
+dofs_capilar = locate_dofs_geometrical(V, fronteira_bocal)
+dofs_barreira = locate_dofs_geometrical(V, froteira_barreira)
 
 # Condições de controrno para capilar (potencial 0)
-bc_capilar = dirichletbc(PETSc.ScalarType(0), dofs_capilar, V)
-bc_eletrodo = dirichletbc(PETSc.ScalarType(V_critico), dofs_barreira, V)
+bc_capilar = dirichletbc(PETSc.ScalarType(V_critico), dofs_capilar, V)
+bc_eletrodo = dirichletbc(PETSc.ScalarType(0), dofs_barreira, V)
 
 # Aplicando as condições
 bcs = [bc_capilar, bc_eletrodo]
@@ -174,10 +196,10 @@ u = TrialFunction(V)
 v = TestFunction(V)
 
 # Equação em cordenadas cilindricas
-a = r * dot(grad(u), grad(v)) * dx
+a = epsilon * r * dot(grad(u), grad(v)) * dx
 
 # Segundo termo da forma fraca????
-L = r * v * dx 
+L = e0 * v * dx 
 
 phi = Function(V)
 
