@@ -284,6 +284,7 @@ Q = 8 * pi * np.sqrt(epsilon_0 * gamma) * Rg**2 / (3 / 2)  # Carga da gotícula
 x_eixo = x
 E = -E_values[:, 1] - 3e-3  # Campo elétrico ao longo do eixo x
 
+
 def campo_eletrico(t, y):
     x , v = y
     proximo = np.argmin(np.abs(x_eixo - x))
@@ -298,6 +299,17 @@ solucao = solve_ivp(campo_eletrico, tempo, y0, t_eval=t_eval)
 
 x_pos = solucao.y[0]
 v_vel = solucao.y[1]
+
+# Calcular a força elétrica em cada ponto da trajetória da gotícula
+Fe_trajetoria = []
+for x in x_pos:
+    if x < d:
+        indice = np.argmin(np.abs(x_eixo - x))
+        Fe_trajetoria.append(Q * E[indice])
+    else:
+        Fe_trajetoria.append(0)
+
+Fe_trajetoria = np.array(Fe_trajetoria)
 
 
 # Gráficos de posição e velocidade
@@ -318,3 +330,19 @@ plt.title("Velocidade da Gotícula")
 
 plt.tight_layout()
 plt.savefig("velocidade.png")
+
+# Força elétrica vs. Posição
+plt.figure().set_figwidth(6)
+plt.plot(x_pos * 1e3, Fe_trajetoria, label="F_e(x)")
+plt.xlabel("Posição (mm)")
+plt.ylabel("Força elétrica (N)")
+plt.title("Força elétrica vs. Posição")
+plt.grid(True)
+plt.legend()
+
+plt.tight_layout()
+plt.savefig("forca_eletrica.png")
+print("E")
+print(E[:10])  # Mostra os 10 primeiros valores do campo elétrico
+print("--------\ne_values")
+print(E_values[:5])
