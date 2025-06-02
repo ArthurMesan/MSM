@@ -292,10 +292,10 @@ def campo_eletrico(t, y):
     a = Fe / m  # Aceleração
     return [v, a]
 
-tempo = (0, 0.2e-3)  # Intervalo de tempo
+tempo = (0, 1e-3)  # Intervalo de tempo
 y0 = [0, 0]  # Condições iniciais: posição inicial e velocidade inicial
 t_eval = np.linspace(*tempo, 500)
-solucao = solve_ivp(campo_eletrico, tempo, y0, t_eval=t_eval)
+solucao = solve_ivp(campo_eletrico, tempo, y0, method = 'DOP853' ,t_eval=t_eval)
 
 x_pos = solucao.y[0]
 v_vel = solucao.y[1]
@@ -313,36 +313,43 @@ Fe_trajetoria = np.array(Fe_trajetoria)
 
 
 # Gráficos de posição e velocidade
-plt.figure().set_figwidth(5)
+plt.figure().set_figwidth(7)
 plt.plot(solucao.t*1e3, x_pos*1000)
 plt.xlabel("Tempo (ms)")
 plt.ylabel("Posição (mm)")
 plt.title("Posição da Gotícula")
+plt.axhline(y=d*1000, color='r', linestyle='--', label='Distância Capilar-Barreira (6 mm)')
+plt.grid(True)
+plt.legend()
 
 plt.tight_layout()
 plt.savefig("posição.png")
 
-plt.figure().set_figwidth(5)
+plt.figure().set_figwidth(7)
 plt.plot(solucao.t*1e3, v_vel)
 plt.xlabel("Tempo (ms)")
 plt.ylabel("Velocidade (m/s)")
 plt.title("Velocidade da Gotícula")
+plt.axhline(y=0, color='r', linestyle='--', label='Velocidade Inicial (0 m/s)')
+plt.grid(True)
+plt.legend()
 
 plt.tight_layout()
 plt.savefig("velocidade.png")
 
 # Força elétrica vs. Posição
-plt.figure().set_figwidth(6)
+plt.figure().set_figwidth(7)
 plt.plot(x_pos * 1e3, Fe_trajetoria, label="F_e(x)")
 plt.xlabel("Posição (mm)")
 plt.ylabel("Força elétrica (N)")
 plt.title("Força elétrica vs. Posição")
+plt.axhline(y=0, color='r', linestyle='--', label='Força Elétrica Nula')
 plt.grid(True)
 plt.legend()
 
 plt.tight_layout()
 plt.savefig("forca_eletrica.png")
-print("E")
+print("--------\n")
 print(E[:10])  # Mostra os 10 primeiros valores do campo elétrico
-print("--------\ne_values")
+print("--------\n")
 print(E_values[:5])
