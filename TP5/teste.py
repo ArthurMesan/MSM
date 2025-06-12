@@ -26,7 +26,8 @@ mesh_comm = MPI.COMM_WORLD
 # Parâmetros do problema
 rc = 0.0075
 zc = 0.06
-x = 0.005
+r_cilindro = 0.01
+x_offset = 0.005
 rs = 0.01
 m = 0.022
 zb = 0.04
@@ -82,10 +83,10 @@ gmsh.model.occ.synchronize()
 
 
 # Adicionado Fisica ao modelo
-gmsh.model.add_physical_group(dim=2, tags=[ar],tag=4,name="ar")
-gmsh.model.add_physical_group(dim=2, tags=[nucleo],tag=2,name="nucleo")
-gmsh.model.add_physical_group(dim=2, tags=[fio],tag=3,name="fio")
-gmsh.model.add_physical_group(dim=2, tags=[esfera],tag=5,name="esfera")
+gmsh.model.add_physical_group(dim=2, tags=[ar],tag=1,name="ar")
+gmsh.model.add_physical_group(dim=2, tags=[esfera],tag=2,name="esfera")
+gmsh.model.add_physical_group(dim=2, tags=[nucleo],tag=3,name="nucleo")
+gmsh.model.add_physical_group(dim=2, tags=[fio],tag=4,name="fio")
 gmsh.model.occ.synchronize()
 
 
@@ -103,22 +104,22 @@ mesh,cell_tags,facet_tags = gmshio.model_to_mesh(gmsh.model, mesh_comm, model_ra
 gmsh.write("mesh.msh")
 gmsh.finalize()
 
+# Configura a visualização com PyVista
 pyvista.start_xvfb()
 
-
 # Configura a visualização com PyVista
-#plotter = pyvista.Plotter()
-#mesh.topology.create_connectivity(2, 2)
-#grid = pyvista.UnstructuredGrid(*vtk_mesh(mesh, 2))
-#num_local_cells = mesh.topology.index_map(2).size_local
-#grid.cell_data["Marker"] = cell_tags.values[cell_tags.indices < num_local_cells]
-#grid.set_active_scalars("Marker")
+plotter = pyvista.Plotter(off_screen=True)
+mesh.topology.create_connectivity(2, 2)
+grid = pyvista.UnstructuredGrid(*vtk_mesh(mesh, 2))
+num_local_cells = mesh.topology.index_map(2).size_local
+grid.cell_data["Marker"] = cell_tags.values[cell_tags.indices < num_local_cells]
+grid.set_active_scalars("Marker")
 
-#actor = plotter.add_mesh(grid, show_edges=True, cmap="viridis", edge_color="black")
+# Remova o color e use cmap para coloração baseada no "Marker"
+actor = plotter.add_mesh(grid, show_edges=True, cmap="viridis", edge_color="black")
 
-#plotter.view_xy()
-#plotter.show()
-
+plotter.view_xy()
+plotter.screenshot("malha.png")
 
 V = functionspace(mesh, ("Lagrange", 2))
 tdim = mesh.topology.dim
@@ -134,17 +135,17 @@ bc = dirichletbc(default_scalar_type(0), dofs, V)
 
 
 Q = functionspace(mesh, ("DG", 0))
-mu = Function(Q) #
+mu = Function(Q)
 
 # Permeability
-mu0 = Constant(mesh, PETSc.ScalarType(4e-7*np.pi))
-muf = Constant(mesh, PETSc.ScalarType(1200*4e-7*np.pi))
+mu0 = Constant(mesh, PETSc.ScalarType(mu0_constant))
+muf = Constant(mesh, PETSc.ScalarType(muf_constant))
 
 # List of elements in each domain
-core_elements = cell_tags.find(2) # nucleo = 3
-coil_elements = cell_tags.find(3) # fio = 4
-cyl_elements = cell_tags.find(5) # esfera = 2 
-air_elements = cell_tags.find(4) # ar = 1
+core_elements = cell_tags.find(3) 
+coil_elements = cell_tags.find(4) 
+cyl_elements = cell_tags.find(2)  
+air_elements = cell_tags.find(1) 
 
 # Defining the permeability values
 mu.x.array[core_elements] = np.full_like(core_elements, muf, dtype=default_scalar_type)
@@ -171,9 +172,8 @@ J.x.array[coil_elements] = np.full_like(coil_elements, Js, dtype=default_scalar_
 u = TrialFunction(V)
 v = TestFunction(V)
 
-print("Teste-------1")
 
-dx = ufl.Measure("dx", domain=mesh, subdomain_data=cell_tags);
+dx = ufl.Measure("dx", domain=mesh, subdomain_data=cell_tags)
 
 # Variational equation with cylindrical coordinates
 a = (1 / mu) * (1 / r) * dot(grad(u), grad(v)) * dx
@@ -184,9 +184,8 @@ L = J * v * dx
 # Solving the linear problem
 A_ = Function(V) # A_ = r*A_alpha
 problem = LinearProblem(a, L, u=A_, bcs=[bc])
-print("Teste-------2")
 problem.solve()
-print("Teste-------3")
+
 
 # -----------------------------------------------
 
@@ -205,9 +204,183 @@ warp = A_grid.warp_by_scalar("A_")
 
 # Adds the deformed mesh to the plotter
 actor = plotter.add_mesh(warp, show_edges=False)
-actor = plotter.add_title(
-    'Fig. 4 Potencial vetor magnético', font='courier', color='k', font_size=7)
+actor = plotter.add_title('Potencial vetor magnético', font='courier', color='k', font_size=7)
 
 plotter.view_xy()
-plotter.screenshot("malha.png")
+plotter.screenshot("campo.png")
 
+
+#Densidade de FLuxo Magnético B e Campo Magnético H
+# Compute Magnetic flux density (B = curl A)
+W = functionspace(mesh, ("DG", 0, (mesh.geometry.dim, )))
+B = Function(W)
+B_expr = Expression(as_vector((-(1/r)*A_.dx(1), (1/r)*A_.dx(0))), W.element.interpolation_points())
+B.interpolate(B_expr)
+
+# Compute Magnetic Field (H = B/mu)
+H = Function(W)
+H_expr = Expression(as_vector((-(1/r/mu)*A_.dx(1), (1/r/mu)*A_.dx(0))), W.element.interpolation_points())
+H.interpolate(H_expr)
+
+print("Teste-------1")
+
+
+#Gráfico de B
+# Iterpolate B again to mach vtk_mesh DoF.
+Wl = functionspace(mesh, ("Lagrange", 2, (mesh.geometry.dim, )))
+Bl = Function(Wl)
+Bl.interpolate(B)
+
+pyvista.start_xvfb()
+topology, cell_types, geo = vtk_mesh(V)
+values = np.zeros((geo.shape[0], 3), dtype=np.float64)
+values[:, :len(Bl)] = Bl.x.array.real.reshape((geo.shape[0], len(Bl)))
+
+# Create a point cloud of glyphs
+function_grid = pyvista.UnstructuredGrid(topology, cell_types, geo)
+function_grid["Bl"] = values
+glyphs = function_grid.glyph(orient="Bl", factor=10,scale=True)
+
+# Create a pyvista-grid for the mesh
+mesh.topology.create_connectivity(mesh.topology.dim, mesh.topology.dim)
+grid = pyvista.UnstructuredGrid(*vtk_mesh(mesh, mesh.topology.dim))
+
+# Create plotter
+plotter = pyvista.Plotter(off_screen=True)
+#plotter.add_mesh(grid, style="wireframe", color="k")
+plotter.add_mesh(glyphs)
+plotter.view_xy()
+actor = plotter.add_title(
+    'Densidade de fluxo magnético', font='courier', color='k', font_size=7)
+#plotter.window_size = [1000, 250]
+#plotter.camera.zoom(3)
+plotter.screenshot("malha_campo_B.png")
+
+print(geo.min(axis=0), geo.max(axis=0))
+
+
+
+# Gráfico de H
+# Iterpolate H again to mach vtk_mesh DoF.
+Wl = functionspace(mesh, ("Lagrange", 2, (mesh.geometry.dim, )))
+Hl = Function(Wl)
+Hl.interpolate(H)
+
+pyvista.start_xvfb()
+topology, cell_types, geo = vtk_mesh(V)
+values = np.zeros((geo.shape[0], 3), dtype=np.float64)
+values[:, :len(Hl)] = Hl.x.array.real.reshape((geo.shape[0], len(Hl)))
+
+# Create a point cloud of glyphs
+function_grid = pyvista.UnstructuredGrid(topology, cell_types, geo)
+function_grid["Hl"] = values
+glyphs = function_grid.glyph(orient="Hl", factor=1.5e-5)
+
+# Create a pyvista-grid for the mesh
+mesh.topology.create_connectivity(mesh.topology.dim, mesh.topology.dim)
+grid = pyvista.UnstructuredGrid(*vtk_mesh(mesh, mesh.topology.dim))
+
+# Create plotter
+plotter = pyvista.Plotter(off_screen=True)
+#plotter.add_mesh(grid, style="wireframe", color="k")
+plotter.add_mesh(glyphs)
+plotter.view_xy()
+actor = plotter.add_title(
+    'Fig. 6 Campo magnético', font='courier', color='k', font_size=7)
+#plotter.window_size = [1000, 250];
+#plotter.camera.zoom(3)
+plotter.screenshot("malha_campo_H.png")
+
+
+# Inedutancia - fluxo de corrente pela entrada de energia total
+#Creating a balanced tree with the elements of the mesh
+bb_tree = geometry.bb_tree(mesh, mesh.topology.dim) 
+
+# sample points
+tol = 1e-6
+z_points = np.linspace(0,dimensao_y, 101)
+r_points = np.full_like(dimensao_y, 0)
+points = np.zeros((3, 101))
+points[0] = r_points
+points[1] = z_points
+
+B_values = []
+cells = []
+points_on_proc = []
+
+# Find cells whose bounding-box collide with the the points
+cell_candidates = geometry.compute_collisions_points(bb_tree, points.T)
+# Choose one of the cells that contains the point
+colliding_cells = geometry.compute_colliding_cells(mesh, cell_candidates, points.T)
+for i, point in enumerate(points.T):
+    if len(colliding_cells.links(i)) > 0:
+        points_on_proc.append(point)
+        cells.append(colliding_cells.links(i)[0])
+
+points_on_proc = np.array(points_on_proc, dtype=np.float64)
+B_values = B.eval(points_on_proc, cells)
+
+# plot horizontal line
+fig = plt.figure(figsize=(8,5))
+plt.plot(z_points, B_values[:,0], 'y', linewidth=2); # magnify w
+plt.plot(z_points, B_values[:,1], 'g', linewidth=2); # magnify w
+plt.grid(True);
+
+
+# Core and Cylinder boundaries
+plt.plot(np.array([2*rs + 0.01 + x_offset + zc,2*rs + 0.01 + x_offset + zc]),np.array([0,np.max(B_values[:,1])]),'-.b', linewidth=1.5)
+plt.plot(np.array([2*rs + 0.01 + x_offset,2*rs + 0.01 + x_offset]),np.array([0,np.max(B_values[:,1])]),'-.b', linewidth=1.5)
+plt.plot(np.array([0.01,0.01]),np.array([0,np.max(B_values[:,1])]),'-.g', linewidth=1.5)
+plt.plot(np.array([2*rs+r_cilindro,2*rs+r_cilindro]),np.array([0,np.max(B_values[:,1])]),'-.g',linewidth=1.5)
+
+
+plt.legend(['Br (T)','Bz (T)', 'Core boudaries', 'Cylinder boundaries'], loc='upper left');
+fig.suptitle("Fig. 7 Indução magnética");
+plt.grid(True)
+plt.xlabel('$z$ (m), r = 0')
+plt.ylabel('$|B|$')
+
+plt.savefig('inducao_magnetica.png')
+
+# Campo nas superfícies
+z_core = 5.0e-2 # (m) (default 5.0e-2)
+r_air = 5*r_cilindro
+z_air = 2.5*z_core
+# Plot B
+r_line = np.linspace(tol , r_air, 101)
+z_line = z_core/2*np.ones(np.shape(r_line))
+
+points = np.zeros((3, 101))
+points[0] = r_line
+points[1] = z_line
+
+B_values = []
+cells = []
+points_on_proc = []
+
+# Find cells whose bounding-box collide with the the points
+cell_candidates = geometry.compute_collisions_points(bb_tree, points.T)
+# Choose one of the cells that contains the point
+colliding_cells = geometry.compute_colliding_cells(mesh, cell_candidates, points.T)
+for i, point in enumerate(points.T):
+    if len(colliding_cells.links(i)) > 0:
+        points_on_proc.append(point)
+        cells.append(colliding_cells.links(i)[0])
+
+points_on_proc = np.array(points_on_proc, dtype=np.float64)
+B_values = B.eval(points_on_proc, cells)
+
+# plot horizontal line
+fig = plt.figure(figsize=(8,5))
+plt.plot(r_line, B_values[:,0], 'y', linewidth=2); # magnify w
+plt.plot(r_line, B_values[:,1], 'g', linewidth=2); # magnify w
+plt.grid(True);
+
+
+plt.legend(['Br (T)','Bz (T)'], loc='upper right');
+fig.suptitle("Fig. 7 Indução magnética");
+plt.grid(True)
+plt.xlabel('$r$ (m), z = r_core/2')
+plt.ylabel('$B$')
+
+plt.savefig('Campos_na_superficie.png')
